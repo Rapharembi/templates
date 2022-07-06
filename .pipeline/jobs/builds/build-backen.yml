@@ -1,0 +1,61 @@
+trigger:
+  branches: 
+    include:
+      - master
+      - development
+  paths:
+    exclude:
+      - README.md
+      - sonar-pipeline.yml
+      - .gitignore
+
+resources:
+- repo: self
+
+variables:
+  - group: DBMS-APIS-COMMON-VARS
+  - ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
+    - group: DBMS-APIS-PRD-VARS
+    - name : tag
+      value: prd_$(Build.BuildId).$(Build.BuildNumber)
+  - ${{ if ne(variables['Build.SourceBranchName'], 'master') }}:
+    - group: DBMS-APIS-DEV-VARS
+    - name : tag
+      value: dev_$(Build.BuildId).$(Build.BuildNumber)
+
+stages:
+- stage: Build
+  displayName: Build and Push stage
+  jobs:  
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: $(VM_IMAGE_NAME)
+    steps:
+    - task: PipAuthenticate@1
+      displayName: Authenticate with artifact feed
+      inputs:
+        artifactFeeds: $(ARTIFACT_FEED)
+        onlyAddExtraIndex: true
+
+    - task: Docker@2
+      displayName: Build image
+      inputs:
+        command: build
+        repository: $(DOCKER_IMAGE_REPOSITORY)
+        dockerfile: $(Build.SourcesDirectory)/Dockerfile
+        containerRegistry: $(DOCKER_ACR_CONNECTION)
+        tags: |
+          $(tag)
+          latest
+
+    - task: Docker@2
+      displayName: Push image to ACR
+      inputs:
+        command: push
+        repository: $(DOCKER_IMAGE_REPOSITORY)
+        containerRegistry: $(DOCKER_ACR_CONNECTION)
+        tags: |
+          $(tag)
+          latest
+        
